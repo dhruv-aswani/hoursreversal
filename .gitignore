@@ -1,0 +1,5 @@
+.~lock.*
+*.log
+__pycache__/
+*.pyc
+*.xlsx
