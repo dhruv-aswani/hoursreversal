@@ -16,6 +16,7 @@ targets = [
     ("Prithvi Singh", "Associate Consultant", 1541796.09),
 ]
 
+
 # Load workbook
 wb = load_workbook(wip_file, data_only=True)
 
@@ -91,6 +92,8 @@ for f in sorted(glob.glob(batch_pattern), key=lambda x: [int(c) if c.isdigit() e
     if os.path.exists(f):
         previous_files.append(f)
 
+
+
 print(f"Scanning for previously used hours in: {[os.path.basename(f) for f in previous_files]}")
 
 for prev_output in previous_files:
@@ -141,87 +144,99 @@ for target_emp, target_des, target_ansr in targets:
    
     remaining = target_ansr
    
-    allowed = [target_des]
+    priority_list = [target_des]
    
     if 'Senior Manager' in target_des:
-        allowed.append('Manager')
+        priority_list.append('Manager')
    
     if 'Senior Analyst' in target_des:
-        allowed.append('Associate Consultant')
-        allowed.append('Consultant')
+        priority_list.append('Associate Consultant')
+        priority_list.append('Consultant')
 
     if 'Associate Consultant' in target_des:
-        allowed.append('Consultant')
+        priority_list.append('Consultant')
    
-    eligible = (
-        emp_totals[emp_totals['Designation'].isin(allowed)]
-        .sort_values('ANSR', ascending=False)
-    )
-   
-    for _, emp_row in eligible.iterrows():
-       
-        rev_emp = emp_row['Employee']
-       
-        emp_rows = df[
-            (df['Employee'] == rev_emp) &
-            (df['Designation'].isin(allowed))
-        ].copy()
-       
-        emp_rows = emp_rows.sort_values(
-            'Week Ending Date',
-            ascending=False
-        )
-       
-        for _, row in emp_rows.iterrows():
-           
-            if remaining <= 0:
-                break
-           
-            key = row['unique_id']
-           
-            total_hours = float(row['Hours'])
-            total_ansr = round(float(row['ANSR']), 2)
-            rate_per_hour = total_ansr / total_hours
-           
-            # How many hours are still available in this row?
-            already_used = used_hours.get(key, 0)
-            avail_hours = total_hours - already_used
-           
-            if avail_hours <= 0:
-                continue
-           
-            avail_ansr = round(rate_per_hour * avail_hours, 2)
-           
-            # Partial allocation: take only what's needed
-            if avail_ansr > remaining and avail_hours > 1:
-                needed_hours = math.ceil(remaining / rate_per_hour)
-                needed_hours = max(1, min(needed_hours, avail_hours))
-                hours = needed_hours
-                ansr = round(rate_per_hour * hours, 2)
-            else:
-                hours = avail_hours
-                ansr = avail_ansr
-           
-            output.append({
-                "Target Employee": target_emp,
-                "Designation": target_des,
-                "Target ANSR": round(target_ansr,2),
-                "Reversal From Employee": rev_emp,
-                "Reversal Designation": designation_map.get(rev_emp, ''),
-                "Week Ending Date":
-                    row['Week Ending Date'].strftime('%d-%b-%Y')
-                    if hasattr(row['Week Ending Date'],'strftime')
-                    else str(row['Week Ending Date']),
-                "Hours": hours,
-                "ANSR": ansr,
-            })
-           
-            remaining -= ansr
-           
-            used_hours[key] = already_used + hours
-       
+    for current_des in priority_list:
         if remaining <= 0:
             break
+            
+        eligible = (
+            emp_totals[emp_totals['Designation'] == current_des]
+            .sort_values('ANSR', ascending=False)
+        )
+       
+        for _, emp_row in eligible.iterrows():
+            if remaining <= 0:
+                break
+                
+            rev_emp = emp_row['Employee']
+           
+            emp_rows = df[
+                (df['Employee'] == rev_emp) &
+                (df['Designation'] == current_des)
+            ].copy()
+           
+            emp_rows = emp_rows.sort_values(
+                'Week Ending Date',
+                ascending=False
+            )
+           
+            for _, row in emp_rows.iterrows():
+               
+                if remaining <= 0:
+                    break
+               
+                key = row['unique_id']
+               
+                total_hours = float(row['Hours'])
+                total_ansr = round(float(row['ANSR']), 2)
+                rate_per_hour = total_ansr / total_hours
+               
+                # How many hours are still available in this row?
+                already_used = used_hours.get(key, 0)
+                avail_hours = total_hours - already_used
+               
+                if avail_hours <= 0:
+                    continue
+               
+                avail_ansr = round(rate_per_hour * avail_hours, 2)
+               
+                # Partial allocation: take only what's needed
+                if avail_ansr > remaining and avail_hours > 1:
+                    h_floor = max(1, min(math.floor(remaining / rate_per_hour), avail_hours))
+                    h_ceil = max(1, min(math.ceil(remaining / rate_per_hour), avail_hours))
+                    
+                    diff_floor = abs(remaining - (h_floor * rate_per_hour))
+                    diff_ceil = abs(remaining - (h_ceil * rate_per_hour))
+                    
+                    if diff_floor < diff_ceil:
+                        hours = h_floor
+                    else:
+                        hours = h_ceil
+                    ansr = round(rate_per_hour * hours, 2)
+                else:
+                    hours = avail_hours
+                    ansr = avail_ansr
+
+               
+                output.append({
+                    "Target Employee": target_emp,
+                    "Designation": target_des,
+                    "Target ANSR": round(target_ansr,2),
+                    "Reversal From Employee": rev_emp,
+                    "Reversal Designation": designation_map.get(rev_emp, ''),
+                    "Week Ending Date":
+                        row['Week Ending Date'].strftime('%d-%b-%Y')
+                        if hasattr(row['Week Ending Date'],'strftime')
+                        else str(row['Week Ending Date']),
+                    "Hours": hours,
+                    "ANSR": ansr,
+                })
+               
+                remaining -= ansr
+               
+                used_hours[key] = already_used + hours
+
 
 out_df = pd.DataFrame(output)
 
@@ -358,6 +373,8 @@ batch = 1
 while os.path.exists(f'/home/kali/Downloads/Test2/reversal_mapping_batch_{batch}.xlsx'):
     batch += 1
 out_path = f'/home/kali/Downloads/Test2/reversal_mapping_batch_{batch}.xlsx'
+
+
 wb_out.save(out_path)
 
 # Print summary
